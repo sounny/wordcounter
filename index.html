@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Sounny | Word Counter</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <!-- Font (fast) -->
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Quill (rich text editor) -->
+  <link href="https://cdn.quilljs.com/1.3.7/quill.snow.css" rel="stylesheet" />
+  <script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
+
+  <!-- DOMPurify (sanitize imported HTML) -->
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+
+  <!-- Mammoth.js (DOCX to HTML) -->
+  <script src="https://unpkg.com/mammoth@1.4.21/mammoth.browser.min.js"></script>
+
+  <!-- PDF.js (PDF text extraction) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    // PDF.js worker
+    window.pdfjsLib = window['pdfjs-dist/build/pdf'];
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  </script>
+
+  <style>
+    :root{
+      --bg: #0b0c10;
+      --panel: #121318;
+      --muted: #a8b3cf;
+      --text: #e6eaf2;
+      --accent: #6aa6ff;
+      --border: #1f2330;
+      --chip: #1a1d26;
+      --ok: #3ecf8e;
+      --warn: #ffd166;
+    }
+    *{ box-sizing: border-box; }
+    html,body{ height:100%; }
+    body{
+      margin:0;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+      background: var(--bg);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    a{ color: var(--accent); text-decoration: none; }
+    header{
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display:flex; align-items:center; gap:16px; justify-content:space-between;
+      background: #0d0f15;
+      position: sticky; top:0; z-index: 30;
+    }
+    .brand{
+      display:flex; align-items:center; gap:12px; font-weight:700; letter-spacing:.2px;
+    }
+    .logo{
+      width:28px; height:28px; border-radius:8px;
+      background: linear-gradient(145deg, #7bb9ff, #4a73ff);
+      display:inline-flex; align-items:center; justify-content:center;
+      color: #0b0c10;
+      font-weight:800;
+    }
+    .wrap{
+      padding: 20px;
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 1020px){
+      .wrap{ grid-template-columns: 1fr; }
+    }
+    .card{
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .toolbar{
+      display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:12px;
+    }
+    .toolbar .btn, .toolbar label.btn{
+      border:1px solid var(--border); background:#0e1016; color:var(--text);
+      padding:10px 12px; border-radius:10px; font-size:14px; cursor:pointer;
+    }
+    .toolbar input[type="file"]{ display:none; }
+    .toolbar .grow{ flex:1; min-width: 260px; }
+    .toolbar input[type="url"]{
+      width:100%; padding:10px 12px; border:1px solid var(--border);
+      border-radius:10px; background:#0e1016; color:var(--text);
+    }
+    .toolbar .help{
+      font-size:12px; color: var(--muted); margin-top:6px;
+    }
+
+    .metrics{
+      display:grid; gap: 10px;
+      grid-template-columns: repeat(2, 1fr);
+    }
+    .metric{
+      padding:12px; background: var(--chip);
+      border:1px solid var(--border); border-radius:10px;
+    }
+    .metric .label{ font-size:12px; color: var(--muted); }
+    .metric .value{ font-size:20px; font-weight:700; margin-top:6px; }
+
+    .grid-3{ display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; }
+    .grid-2{ display:grid; grid-template-columns: repeat(2, 1fr); gap:10px; }
+    .section-title{
+      font-weight:700; font-size:13px; color: var(--muted); text-transform: uppercase;
+      letter-spacing:.12em; margin: 8px 0 10px 0;
+    }
+
+    .options .row{ display:flex; gap:8px; align-items:center; margin-bottom:8px; }
+    .options input[type="text"], .options textarea, .options select{
+      width:100%; padding:10px 12px; border:1px solid var(--border);
+      border-radius:10px; background:#0e1016; color:var(--text); resize:vertical;
+    }
+    .options textarea{ min-height: 70px; }
+
+    .top-words table{ width:100%; border-collapse: collapse; }
+    .top-words th, .top-words td{
+      text-align:left; padding:8px 6px; border-bottom:1px solid var(--border);
+      font-size:14px;
+    }
+    .badge{
+      display:inline-block; padding:2px 8px; border-radius:999px; border:1px solid var(--border);
+      background:#0e1016; color:var(--muted); font-size:11px;
+    }
+    .ok{ color: var(--ok); }
+    .warn{ color: var(--warn); }
+
+    /* Editor */
+    #editor-card{ padding:0; overflow: hidden; }
+    #editor-toolbar{
+      border-bottom:1px solid var(--border);
+      background:#0e1016;
+    }
+    #editor{
+      height: 55vh;
+      max-height: 70vh;
+      background:#0f1118;
+      border:none;
+      color: var(--text);
+    }
+    .ql-snow .ql-picker{ color: var(--text); }
+    .ql-snow.ql-toolbar button, .ql-snow .ql-picker-label{ color: var(--text); }
+    .ql-container.ql-snow{ border: none; }
+    .ql-toolbar.ql-snow{ border: none; }
+    .footer-note{ color: var(--muted); font-size:12px; margin-top:8px; }
+    .kbd{
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      padding:2px 6px; border:1px solid var(--border); border-bottom-width:3px;
+      border-radius:6px; background:#0e1016; font-size:12px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="logo">S</div>
+      <div>Sounny</div>
+    </div>
+    <div class="badge">Word Counter</div>
+  </header>
+
+  <div class="wrap">
+    <!-- Left panel: controls + metrics -->
+    <aside class="card">
+      <div class="section-title">Import</div>
+      <div class="toolbar">
+        <label class="btn" for="file-input">Upload file</label>
+        <input id="file-input" type="file" accept=".txt,.docx,.pdf,.rtf,.html,.htm" />
+        <button class="btn" id="paste-sample">Sample text</button>
+      </div>
+
+      <div class="toolbar">
+        <input id="gdoc-url" class="grow" type="url" placeholder="Paste Google Doc URL (optional)" />
+        <button class="btn" id="fetch-gdoc">Fetch</button>
+        <div class="help">
+          Tip: Share the doc to “Anyone with the link”.  
+          If the fetch fails, click <span id="gdoc-export-hint"></span> to download. Then upload the file here.
+        </div>
+      </div>
+
+      <div class="section-title">Counts</div>
+      <div class="metrics">
+        <div class="metric"><div class="label">Words</div><div class="value" id="m-words">0</div></div>
+        <div class="metric"><div class="label">Words (no stop words)</div><div class="value" id="m-words-clean">0</div></div>
+        <div class="metric"><div class="label">Characters (with spaces)</div><div class="value" id="m-chars">0</div></div>
+        <div class="metric"><div class="label">Characters (no spaces)</div><div class="value" id="m-chars-nospace">0</div></div>
+        <div class="metric"><div class="label">Sentences</div><div class="value" id="m-sentences">0</div></div>
+        <div class="metric"><div class="label">Paragraphs</div><div class="value" id="m-paragraphs">0</div></div>
+      </div>
+
+      <div class="section-title">Quality</div>
+      <div class="grid-2">
+        <div class="metric"><div class="label">Flesch-Kincaid grade</div><div class="value" id="m-grade">N/A</div></div>
+        <div class="metric"><div class="label">Reading ease</div><div class="value" id="m-ease">N/A</div></div>
+      </div>
+
+      <div class="section-title">Page and time</div>
+      <div class="options">
+        <div class="row">
+          <select id="pages-model" title="Words per page">
+            <option value="300">300 words per page (double spaced)</option>
+            <option value="250">250 words per page (dense)</option>
+            <option value="500">500 words per page (single spaced)</option>
+            <option value="400">400 words per page</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="metric"><div class="label">Pages (estimate)</div><div class="value" id="m-pages">0</div></div>
+        <div class="metric"><div class="label">Reading time</div><div class="value" id="m-readtime">0 min</div></div>
+      </div>
+      <div class="grid-2" style="margin-top:10px;">
+        <div class="metric"><div class="label">Speaking time</div><div class="value" id="m-saytime">0 min</div></div>
+        <div class="metric"><div class="label">Avg words per sentence</div><div class="value" id="m-wps">0</div></div>
+      </div>
+
+      <div class="section-title">Filters</div>
+      <div class="options">
+        <div class="row">
+          <input type="checkbox" id="use-stopwords" checked />
+          <label for="use-stopwords">Exclude common words</label>
+        </div>
+        <div class="row">
+          <input type="checkbox" id="apply-stopwords-top" checked />
+          <label for="apply-stopwords-top">Apply to Top words</label>
+        </div>
+        <div class="row">
+          <input type="checkbox" id="count-numbers" />
+          <label for="count-numbers">Count numbers as words</label>
+        </div>
+        <div class="row">
+          <input type="checkbox" id="hyphen-as-one" checked />
+          <label for="hyphen-as-one">Count hyphenated terms as one</label>
+        </div>
+        <div class="row">
+          <textarea id="custom-stopwords" placeholder="Add stop words (comma or space). Example: however, thus"></textarea>
+        </div>
+      </div>
+
+      <div class="section-title">Top words</div>
+      <div class="top-words">
+        <table id="top-words-table" aria-live="polite">
+          <thead><tr><th>Word</th><th>Count</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="footer-note">
+        Sounny updates all values as you type.  
+        Keyboard tip: press <span class="kbd">Ctrl</span> + <span class="kbd">B</span> for bold, <span class="kbd">Ctrl</span> + <span class="kbd">I</span> for italic.
+      </div>
+    </aside>
+
+    <!-- Right panel: rich text editor -->
+    <section class="card" id="editor-card" aria-label="Editor">
+      <div id="editor-toolbar">
+        <div id="ql-toolbar" class="ql-toolbar ql-snow">
+          <span class="ql-formats">
+            <select class="ql-header">
+              <option selected></option>
+              <option value="1">H1</option>
+              <option value="2">H2</option>
+              <option value="3">H3</option>
+            </select>
+            <button class="ql-bold"></button>
+            <button class="ql-italic"></button>
+            <button class="ql-underline"></button>
+            <button class="ql-link"></button>
+          </span>
+          <span class="ql-formats">
+            <button class="ql-list" value="ordered"></button>
+            <button class="ql-list" value="bullet"></button>
+            <button class="ql-blockquote"></button>
+            <button class="ql-clean"></button>
+          </span>
+        </div>
+      </div>
+      <div id="editor" aria-label="Rich text editor"></div>
+    </section>
+  </div>
+
+  <script>
+    // -------- Stop words (English) --------
+    const DEFAULT_STOPWORDS = new Set([
+      "a","an","and","the","is","are","was","were","be","been","being","to","of","in","on","for","with","as","by",
+      "that","this","it","its","at","from","or","if","but","not","no","so","we","you","they","he","she","i",
+      "his","her","their","them","our","us","your","my","me","do","does","did","done","can","could","should",
+      "would","will","just","about","over","more","most","some","any","such","than","then","there","here",
+      "when","where","why","how","what","which","who","whom","because","into","out","up","down","off","too",
+      "very","also","have","has","had","ever","never","much","many","few","each","every"
+    ]);
+
+    // -------- Editor --------
+    const quill = new Quill('#editor', {
+      theme: 'snow',
+      modules: { toolbar: '#ql-toolbar', clipboard: { matchVisual: true } },
+      placeholder: 'Paste or type here...'
+    });
+
+    // -------- UI elements --------
+    const el = id => document.getElementById(id);
+    const fileInput = el('file-input');
+    const gdocUrl = el('gdoc-url');
+    const fetchGdocBtn = el('fetch-gdoc');
+    const gdocHint = el('gdoc-export-hint');
+    const sampleBtn = el('paste-sample');
+
+    const metricsEls = {
+      words: el('m-words'),
+      wordsClean: el('m-words-clean'),
+      chars: el('m-chars'),
+      charsNoSpace: el('m-chars-nospace'),
+      sentences: el('m-sentences'),
+      paragraphs: el('m-paragraphs'),
+      pages: el('m-pages'),
+      readtime: el('m-readtime'),
+      saytime: el('m-saytime'),
+      ease: el('m-ease'),
+      grade: el('m-grade'),
+      wps: el('m-wps')
+    };
+
+    const useStop = el('use-stopwords');
+    const applyStopTop = el('apply-stopwords-top');
+    const customStop = el('custom-stopwords');
+    const countNumbers = el('count-numbers');
+    const hyphenAsOne = el('hyphen-as-one');
+    const pagesModel = el('pages-model');
+    const topTableBody = document.querySelector('#top-words-table tbody');
+
+    // Persist options
+    const persistKeys = ['useStop','applyStopTop','customStop','countNumbers','hyphenAsOne','pagesModel'];
+    function saveOptions(){
+      const data = {
+        useStop: useStop.checked,
+        applyStopTop: applyStopTop.checked,
+        customStop: customStop.value,
+        countNumbers: countNumbers.checked,
+        hyphenAsOne: hyphenAsOne.checked,
+        pagesModel: pagesModel.value
+      };
+      localStorage.setItem('sounny.options', JSON.stringify(data));
+    }
+    function loadOptions(){
+      try{
+        const raw = localStorage.getItem('sounny.options');
+        if(!raw) return;
+        const d = JSON.parse(raw);
+        useStop.checked = !!d.useStop;
+        applyStopTop.checked = !!d.applyStopTop;
+        customStop.value = d.customStop || '';
+        countNumbers.checked = !!d.countNumbers;
+        hyphenAsOne.checked = 'hyphenAsOne' in d ? !!d.hyphenAsOne : true;
+        pagesModel.value = d.pagesModel || '300';
+      }catch(e){}
+    }
+    loadOptions();
+
+    // -------- Helpers --------
+    function getEditorHTML(){
+      return quill.root.innerHTML;
+    }
+    function getEditorText(){
+      // Quill adds a trailing newline. Trim it.
+      return quill.getText().trim();
+    }
+
+    function buildStopSet(){
+      const set = new Set(DEFAULT_STOPWORDS);
+      const extra = customStop.value
+        .toLowerCase()
+        .split(/[\s,;]+/)
+        .map(s => s.trim())
+        .filter(Boolean);
+      for(const w of extra) set.add(w);
+      return set;
+    }
+
+    // Tokenize to words with options
+    function tokenize(text, { hyphenAsOne = true, countNumbers = false } = {}){
+      // Normalize newlines
+      const t = text.normalize('NFC');
+      // Build pattern
+      // Include letters (Unicode), marks, and optional hyphen or apostrophe inside words
+      // Optionally include digits
+      const inner = hyphenAsOne ? "[\\p{L}\\p{M}'’\-]+" : "[\\p{L}\\p{M}'’]+(?:-[\\p{L}\\p{M}'’]+)?";
+      let pattern = `\\b${inner}\\b`;
+      if(countNumbers){
+        pattern = `\\b(?:${inner}|\\p{N}+(?:[.,]\\p{N}+)*)\\b`;
+      }
+      let re;
+      try{
+        re = new RegExp(pattern, 'gu');
+      }catch(e){
+        // Fallback without Unicode properties
+        re = countNumbers
+          ? /\b([A-Za-zÀ-ÖØ-öø-ÿ'’-]+|\d+(?:[.,]\d+)*)\b/g
+          : /\b([A-Za-zÀ-ÖØ-öø-ÿ'’-]+)\b/g;
+      }
+      const arr = [];
+      let m;
+      while((m = re.exec(t)) !== null){
+        const w = (m[0] || '').replace(/^[^A-Za-zÀ-ÖØ-öø-ÿ]+|[^A-Za-zÀ-ÖØ-öø-ÿ]+$/g,'');
+        if(w) arr.push(w);
+      }
+      return arr;
+    }
+
+    function splitSentences(text){
+      // Basic sentence split with a small list of abbreviations
+      const ABBR = new Set(["mr","mrs","ms","dr","prof","sr","jr","vs","etc","e.g","i.e","fig","eds","u.s","u.k"]);
+      const parts = [];
+      let cur = '';
+      for(const ch of text){
+        cur += ch;
+        if(/[.!?]/.test(ch)){
+          // Peek back to see last word
+          const lastWord = (cur.match(/([A-Za-z\.]+)\s*$/) || [,''])[1].toLowerCase();
+          if(ABBR.has(lastWord.replace(/\.$/, ''))) continue;
+          parts.push(cur.trim());
+          cur = '';
+        }
+      }
+      if(cur.trim()) parts.push(cur.trim());
+      return parts;
+    }
+
+    function countSyllablesWord(word){
+      // Simple English heuristic
+      const w = word.toLowerCase().replace(/[^a-z]/g,'');
+      if(!w) return 0;
+      // Vowel groups
+      let syl = 0;
+      const vowels = 'aeiouy';
+      let prevV = false;
+      for(let i=0; i<w.length; i++){
+        const v = vowels.includes(w[i]);
+        if(v && !prevV) syl++;
+        prevV = v;
+      }
+      // Silent e
+      if(w.endsWith('e') && syl>1 && !w.endsWith('le')) syl--;
+      // Add for -le ending like "table"
+      if(w.endsWith('le') && w.length>2 && !vowels.includes(w[w.length-3])) syl++;
+      return Math.max(1, syl);
+    }
+
+    function computeMetrics(){
+      const rawText = getEditorText();
+      const html = getEditorHTML();
+
+      const wordsArr = tokenize(rawText, { hyphenAsOne: hyphenAsOne.checked, countNumbers: countNumbers.checked });
+      const wordCount = wordsArr.length;
+
+      const stopSet = buildStopSet();
+      const cleaned = wordsArr.filter(w => !useStop.checked ? true : !stopSet.has(w.toLowerCase()));
+      const wordCountClean = cleaned.length;
+
+      const chars = rawText.length;
+      const charsNoSpace = rawText.replace(/\s+/g,'').length;
+
+      const sentences = splitSentences(rawText);
+      const sentenceCount = Math.max(1, sentences.length);
+
+      const paragraphs = html
+        .replace(/<\/(p|div|li|h[1-6])>/g, '\n')
+        .split(/\n{2,}/).map(s => s.trim()).filter(Boolean).length || 1;
+
+      // Syllables for grade level
+      let syllables = 0;
+      for(const w of wordsArr){ syllables += countSyllablesWord(w); }
+
+      // Flesch Reading Ease and FK Grade (English only)
+      const W = Math.max(1, wordCount);
+      const S = Math.max(1, sentenceCount);
+      const Sy = Math.max(1, syllables);
+
+      const readingEase = 206.835 - 1.015*(W/S) - 84.6*(Sy/W);
+      const fkGrade = 0.39*(W/S) + 11.8*(Sy/W) - 15.59;
+
+      // Pages and time
+      const wordsPerPage = parseInt(pagesModel.value, 10) || 300;
+      const pages = wordCount / wordsPerPage;
+      const readMins = W / 238;       // average adult read rate
+      const sayMins  = W / 130;       // clear talk rate
+
+      // Top words
+      const freq = new Map();
+      const baseForTop = (applyStopTop.checked && useStop.checked) ? cleaned : wordsArr;
+      for(const w of baseForTop){
+        const k = w.toLowerCase();
+        freq.set(k, (freq.get(k)||0) + 1);
+      }
+      const top = Array.from(freq.entries())
+        .sort((a,b)=> b[1]-a[1] || a[0].localeCompare(b[0]))
+        .slice(0,10);
+
+      return {
+        wordCount, wordCountClean,
+        chars, charsNoSpace,
+        sentenceCount, paragraphs,
+        readingEase, fkGrade,
+        pages, readMins, sayMins,
+        avgWPS: W / S,
+        top
+      };
+    }
+
+    function fmtFloat(n, d=1){
+      if(!isFinite(n)) return '0';
+      return Number(n).toFixed(d);
+    }
+
+    function renderTopWords(top){
+      topTableBody.innerHTML = '';
+      if(!top.length){
+        topTableBody.innerHTML = '<tr><td colspan="2" style="color:var(--muted)">No words</td></tr>';
+        return;
+      }
+      for(const [w,c] of top){
+        const tr = document.createElement('tr');
+        const tdW = document.createElement('td');
+        const tdC = document.createElement('td');
+        tdW.textContent = w;
+        tdC.textContent = String(c);
+        tr.appendChild(tdW); tr.appendChild(tdC);
+        topTableBody.appendChild(tr);
+      }
+    }
+
+    function updateUI(){
+      const m = computeMetrics();
+      metricsEls.words.textContent = m.wordCount;
+      metricsEls.wordsClean.textContent = m.wordCountClean;
+      metricsEls.chars.textContent = m.chars;
+      metricsEls.charsNoSpace.textContent = m.charsNoSpace;
+      metricsEls.sentences.textContent = m.sentenceCount;
+      metricsEls.paragraphs.textContent = m.paragraphs;
+      metricsEls.pages.textContent = fmtFloat(m.pages, 2);
+      metricsEls.readtime.textContent = `${Math.max(1, Math.round(m.readMins))} min`;
+      metricsEls.saytime.textContent  = `${Math.max(1, Math.round(m.sayMins))} min`;
+      metricsEls.wps.textContent = fmtFloat(m.avgWPS, 2);
+
+      if(!isFinite(m.fkGrade) || m.wordCount < 30){
+        metricsEls.grade.textContent = 'N/A';
+        metricsEls.ease.textContent  = 'N/A';
+      }else{
+        metricsEls.grade.textContent = fmtFloat(m.fkGrade, 1);
+        metricsEls.ease.textContent  = fmtFloat(m.readingEase, 0);
+      }
+      renderTopWords(m.top);
+    }
+
+    // Debounce updates so typing feels smooth
+    let debounceTimer;
+    function scheduleUpdate(){
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(()=>{ updateUI(); saveOptions(); }, 180);
+    }
+
+    quill.on('text-change', scheduleUpdate);
+    [useStop, applyStopTop, customStop, countNumbers, hyphenAsOne, pagesModel]
+      .forEach(elm => elm.addEventListener('input', scheduleUpdate));
+
+    // -------- Import: local files --------
+    fileInput.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if(!file) return;
+      const name = file.name.toLowerCase();
+      try{
+        if(name.endsWith('.txt') || name.endsWith('.htm') || name.endsWith('.html')){
+          const text = await file.text();
+          const clean = DOMPurify.sanitize(text, { ALLOWED_TAGS: ['b','strong','i','em','u','a','p','br','ul','ol','li','blockquote','h1','h2','h3','h4','h5','h6','span'] , ALLOWED_ATTR: ['href','target','rel','style'] });
+          quill.clipboard.dangerouslyPasteHTML(clean);
+        }else if(name.endsWith('.docx')){
+          const arrayBuffer = await file.arrayBuffer();
+          const result = await window.mammoth.convertToHtml({ arrayBuffer }, { styleMap: ["u => u"] });
+          const html = DOMPurify.sanitize(result.value);
+          quill.clipboard.dangerouslyPasteHTML(html);
+        }else if(name.endsWith('.pdf')){
+          await importPDFToEditor(file);
+        }else if(name.endsWith('.rtf')){
+          const rtf = await file.text();
+          const html = DOMPurify.sanitize(rtfToSimpleHTML(rtf));
+          quill.clipboard.dangerouslyPasteHTML(html);
+        }else{
+          alert('File type not supported yet.');
+        }
+      }catch(err){
+        console.error(err);
+        alert('Import failed. Please check the file.');
+      }finally{
+        fileInput.value = '';
+      }
+    });
+
+    async function importPDFToEditor(file){
+      const buf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+      let textBlocks = [];
+      for(let i=1; i<=pdf.numPages; i++){
+        const page = await pdf.getPage(i);
+        const tc = await page.getTextContent();
+        const s = tc.items.map(it => it.str).join(' ');
+        textBlocks.push(s.trim());
+      }
+      const html = textBlocks.map(p => `<p>${escapeHtml(p)}</p>`).join('\n');
+      quill.clipboard.dangerouslyPasteHTML(html);
+    }
+
+    function escapeHtml(s){
+      return s.replace(/[&<>"]/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+    }
+
+    // Very basic RTF to HTML fallback.
+    // This handles plain text, line breaks, bold, italic, underline in simple cases.
+    function rtfToSimpleHTML(rtf){
+      // Decode hex escapes \'hh
+      let text = rtf.replace(/\\'[0-9a-fA-F]{2}/g, m => {
+        const hex = m.slice(2);
+        try{ return String.fromCharCode(parseInt(hex, 16)); }catch{ return ''; }
+      });
+
+      // Flags
+      let bold = false, italic = false, underline = false;
+      let out = '';
+      // Split on control words and text chunks
+      const tokens = text.split(/(\\\w+)|([\r\n]+)/);
+      for(const tok of tokens){
+        if(!tok) continue;
+        if(/^[\r\n]+$/.test(tok)){ out += '<br/>'; continue; }
+        if(/^\\\w+/.test(tok)){
+          const cmd = tok.slice(1);
+          if(cmd.startsWith('b')) bold = !cmd.startsWith('b0');
+          if(cmd.startsWith('i')) italic = !cmd.startsWith('i0');
+          if(cmd.startsWith('ul')) underline = !cmd.startsWith('ul0');
+          continue;
+        }
+        let seg = escapeHtml(tok);
+        if(underline) seg = `<u>${seg}</u>`;
+        if(italic) seg = `<em>${seg}</em>`;
+        if(bold) seg = `<strong>${seg}</strong>`;
+        out += seg;
+      }
+      // Wrap as paragraphs
+      return `<p>${out}</p>`;
+    }
+
+    // -------- Google Docs URL helper --------
+    function buildDocxExportLink(url){
+      try{
+        const m = url.match(/https?:\/\/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/);
+        if(!m) return null;
+        const id = m[1];
+        return `https://docs.google.com/document/d/${id}/export?format=docx`;
+      }catch{ return null; }
+    }
+
+    fetchGdocBtn.addEventListener('click', async () => {
+      const url = gdocUrl.value.trim();
+      if(!url){ alert('Please paste a Google Doc link.'); return; }
+      const exportUrl = buildDocxExportLink(url);
+      if(!exportUrl){
+        alert('Link does not look like a Google Doc.');
+        return;
+      }
+      gdocHint.innerHTML = `<a href="${exportUrl}" target="_blank" rel="noopener">this export link</a>`;
+      // Try fetch. Many docs block cross-site fetch. If blocked, we show the hint above.
+      try{
+        const res = await fetch(exportUrl);
+        if(!res.ok) throw new Error('Fetch failed');
+        const blob = await res.blob();
+        // Name it and pass to DOCX flow
+        const file = new File([blob], 'gdoc.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+        // Convert as DOCX
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await window.mammoth.convertToHtml({ arrayBuffer }, { styleMap: ["u => u"] });
+        const html = DOMPurify.sanitize(result.value);
+        quill.clipboard.dangerouslyPasteHTML(html);
+      }catch(err){
+        console.warn('Direct fetch failed. Likely CORS or permissions.', err);
+        alert('The browser could not fetch the Doc. Click the export link, download as .docx, then upload.');
+      }
+    });
+
+    // -------- Sample text --------
+    sampleBtn.addEventListener('click', () => {
+      const sample = `
+<h2>Sample text</h2>
+<p>This short sample shows how Sounny works. Paste, type, or import files. The panel on the left updates in real time. You can add stop words and set page size.</p>
+<ul><li>Count words and characters</li><li>See grade level</li><li>View top words</li></ul>`;
+      quill.clipboard.dangerouslyPasteHTML(sample);
+    });
+
+    // Init
+    updateUI();
+  </script>
+</body>
+</html>
