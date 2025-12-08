@@ -540,29 +540,36 @@
       const charsNoSpace = rawText.replace(/\s+/g,'').length;
 
       const sentences = splitSentences(rawText);
-      const sentenceCount = Math.max(1, sentences.length);
+      const sentenceCount = sentences.length;
 
       const paragraphs = html
         .replace(/<\/(p|div|li|h[1-6])>/g, '\n')
-        .split(/\n{2,}/).map(s => s.trim()).filter(Boolean).length || 1;
+        .split(/\n{2,}/)
+        .map(s => s.trim())
+        .filter(Boolean)
+        .length;
 
       // Syllables for grade level
       let syllables = 0;
       for(const w of wordsArr){ syllables += countSyllablesWord(w); }
 
       // Flesch Reading Ease and FK Grade (English only)
-      const W = Math.max(1, wordCount);
-      const S = Math.max(1, sentenceCount);
-      const Sy = Math.max(1, syllables);
+      const W = wordCount;
+      const S = sentenceCount || 1;
+      const Sy = syllables || 0;
 
-      const readingEase = 206.835 - 1.015*(W/S) - 84.6*(Sy/W);
-      const fkGrade = 0.39*(W/S) + 11.8*(Sy/W) - 15.59;
+      const readingEase = (wordCount && sentenceCount)
+        ? 206.835 - 1.015*(W/S) - 84.6*(Sy/W)
+        : NaN;
+      const fkGrade = (wordCount && sentenceCount)
+        ? 0.39*(W/S) + 11.8*(Sy/W) - 15.59
+        : NaN;
 
       // Pages and time
       const wordsPerPage = parseInt(pagesModel.value, 10) || 300;
-      const pages = wordCount / wordsPerPage;
-      const readMins = W / 238;       // average adult read rate
-      const sayMins  = W / 130;       // clear talk rate
+      const pages = wordCount ? wordCount / wordsPerPage : 0;
+      const readMins = wordCount ? (W / 238) : 0;       // average adult read rate
+      const sayMins  = wordCount ? (W / 130) : 0;       // clear talk rate
 
       // Top words
       const freq = new Map();
@@ -581,7 +588,7 @@
         sentenceCount, paragraphs,
         readingEase, fkGrade,
         pages, readMins, sayMins,
-        avgWPS: W / S,
+        avgWPS: sentenceCount ? (W / sentenceCount) : 0,
         top
       };
     }
@@ -617,8 +624,8 @@
       metricsEls.sentences.textContent = m.sentenceCount;
       metricsEls.paragraphs.textContent = m.paragraphs;
       metricsEls.pages.textContent = fmtFloat(m.pages, 2);
-      metricsEls.readtime.textContent = `${Math.max(1, Math.round(m.readMins))} min`;
-      metricsEls.saytime.textContent  = `${Math.max(1, Math.round(m.sayMins))} min`;
+      metricsEls.readtime.textContent = `${Math.round(m.readMins)} min`;
+      metricsEls.saytime.textContent  = `${Math.round(m.sayMins)} min`;
       metricsEls.wps.textContent = fmtFloat(m.avgWPS, 2);
 
       if(!isFinite(m.fkGrade) || m.wordCount < 30){
