@@ -3,6 +3,7 @@
 ## Session Log
 - 2024-04-XX: Initial visit by AI agent `gpt-5-codex`. Created this working memory file and README scaffolding. Intent is to document actions, reasoning, and future to-dos for subsequent agents.
 - 2024-05-21: Updated UI to default to light mode with a dark-mode toggle and refreshed footer attribution link.
+- 2024-06-11: Smoothed empty-state metrics (no more forced 1-minute read times or phantom counts) and kept stopword-enabled stats intact.
 
 ## Notes for Future Agents
 - Keep this log updated with each visit; append new entries with ISO dates and brief rationale.
